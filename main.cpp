@@ -9,10 +9,11 @@
 #include <deque>
 #include <unistd.h>
 #include <ctime>
+#include <cerrno>
 using namespace std;
 
-void load_site(string site_file);
-void load_search(string search_file);
+int load_site(string site_file);
+int load_search(string search_file);
 void curl_url(string site);
 int search_data(string word, string text);
 
@@ -85,8 +86,8 @@ int main(int argc, char** argv){
 		int count = 0;
 		int start_time = time(NULL);
 		
-		load_site(site_file);
-		load_search(search_file);
+		if(load_site(site_file)== 1) return EXIT_FAILURE;
+		if(load_search(search_file)==1) return EXIT_FAILURE;
 		for(int i=0; i<site_urls.size(); i++){
 			curl_url(site_urls[i]);
 		}
@@ -109,7 +110,7 @@ int main(int argc, char** argv){
 	}
 }
 
-void load_site(string site_file){				//todo: make sure file is there
+int load_site(string site_file){				//todo: make sure file is there
 	string text;
 	ifstream file(site_file.c_str());
 	if(file.is_open()){
@@ -117,15 +118,22 @@ void load_site(string site_file){				//todo: make sure file is there
 			getline(file, text);
 			site_urls.push_back(text);
 		}
+	
+		for (int i=0; i<site_urls.size(); i++){
+			cout << site_urls[i] << endl;
+		}
+		
+		file.close();
 	}
-	for (int i=0; i<site_urls.size(); i++){
-		cout << site_urls[i] << endl;
-	}
-	file.close();
+	else {
+		cout << "ERROR: Could not open site file " << strerror(errno) << endl;
+		return 1;
+	}			
 	//site_urls.pop_back();
+	return 0;
 }
 
-void load_search(string search_file){			//todo: make sure file is there
+int load_search(string search_file){			//todo: make sure file is there
 	string text;
 	ifstream file(search_file.c_str());
 	if(file.is_open()){
@@ -133,10 +141,15 @@ void load_search(string search_file){			//todo: make sure file is there
 			getline(file, text);
 			search_terms.push_back(text);
 		}
+		file.close();
 	}
+	else {
+		cout << "ERROR: Could not open search file " << strerror(errno) << endl;
+		return 1;
+	}			
 	
-	file.close();
 	//search_terms.pop_back();
+	return 0;
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~CURL CODE~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
