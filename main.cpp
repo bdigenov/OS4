@@ -7,7 +7,8 @@
 #include <string.h>
 #include <curl/curl.h>
 #include <deque>
-
+#include <unistd.h>
+#include <ctime>
 using namespace std;
 
 void load_site(string site_file);
@@ -78,27 +79,34 @@ int main(int argc, char** argv){
 	cout << "searchfile: " << search_file << endl;
 	cout << "sitefile: " << site_file << endl;
 	
-	int count = 0;
-	
-	load_site(site_file);
-	load_search(search_file);
-	for(int i=0; i<site_urls.size(); i++){
-		curl_url(site_urls[i]);
-	}
-	string data_in;
-	int num;
-	while(curl_data.size() != 0){
-		data_in = curl_data.back();
-		curl_data.pop_back();
-		for(int i=0; i<search_terms.size(); i++){
-			num = search_data(search_terms[i], data_in);
-			cout << "Number of " << search_terms[i] << " at URL " << site_urls[count%site_urls.size()] << ":" << num << endl;
-		}
-		count++;
-	}
+	int file_num = 0;
 
-	
-	
+	while (true) {
+		int count = 0;
+		int start_time = time(NULL);
+		
+		load_site(site_file);
+		load_search(search_file);
+		for(int i=0; i<site_urls.size(); i++){
+			curl_url(site_urls[i]);
+		}
+		string data_in;
+		int num;
+		while(curl_data.size() != 0){
+			data_in = curl_data.back();
+			curl_data.pop_back();
+			for(int i=0; i<search_terms.size(); i++){
+				num = search_data(search_terms[i], data_in);
+				cout << "Number of " << search_terms[i] << " at URL " << site_urls[count%site_urls.size()] << ":" << num << endl;
+			}
+			count++;
+		}
+		file_num++;			//Keep track of which round you are on for file output
+
+		while ((time(NULL) - start_time) < period ) {
+			sleep(10);
+		}
+	}
 }
 
 void load_site(string site_file){				//todo: make sure file is there
