@@ -57,11 +57,11 @@ int main(int argc, char** argv){
 				}
 			}
 			if(param.compare("PERIOD_FETCH") == 0){
-				period = atoi(val.c_str());
+				if(atoi(val.c_str()) < 600 && atoi(val.c_str()) > 0) period = atoi(val.c_str());
 			} else if(param.compare("NUM_FETCH") == 0){
-				num_fetch = atoi(val.c_str());
+				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > -1) num_fetch = atoi(val.c_str());
 			} else if(param.compare("NUM_PARSE") == 0){
-				num_parse = atoi(val.c_str());
+				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > -1) num_parse = atoi(val.c_str());
 			} else if(param.compare("SEARCH_FILE") == 0){
 				search_file = val;
 			} else if(param.compare("SITE_FILE") == 0){
