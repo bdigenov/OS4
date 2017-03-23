@@ -50,7 +50,7 @@ int main(int argc, char** argv){
 					first = false;
 				}else if(first){
 					param += n[i];
-				} else {
+				} else if(!isspace(n[i])){
 					val += n[i];
 				}
 			}
@@ -75,6 +75,11 @@ int main(int argc, char** argv){
 	}
 	file.close();
 	
+	cout << "searchfile: " << search_file << endl;
+	cout << "sitefile: " << site_file << endl;
+	
+	int count = 0;
+	
 	load_site(site_file);
 	load_search(search_file);
 	for(int i=0; i<site_urls.size(); i++){
@@ -87,8 +92,9 @@ int main(int argc, char** argv){
 		curl_data.pop_back();
 		for(int i=0; i<search_terms.size(); i++){
 			num = search_data(search_terms[i], data_in);
-			cout << "Number of " << search_terms[i] << ":" << num << endl;
+			cout << "Number of " << search_terms[i] << " at URL " << site_urls[count%site_urls.size()] << ":" << num << endl;
 		}
+		count++;
 	}
 
 	
