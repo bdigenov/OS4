@@ -75,8 +75,6 @@ int main(int argc, char** argv){
 	}
 	file.close();
 	
-	cout << "searchfile: " << search_file << endl;
-	cout << "sitefile: " << site_file << endl;
 	
 	int count = 0;
 	
@@ -92,7 +90,11 @@ int main(int argc, char** argv){
 		curl_data.pop_back();
 		for(int i=0; i<search_terms.size(); i++){
 			num = search_data(search_terms[i], data_in);
-			cout << "Number of " << search_terms[i] << " at URL " << site_urls[count%site_urls.size()] << ":" << num << endl;
+			//cout << search_terms[i] << site_urls[count] << " " << num << endl;
+			cout << search_terms[i] << endl;
+			cout << site_urls[count%site_urls.size()] << endl;
+			cout << num << endl;
+			cout << endl;
 		}
 		count++;
 	}
@@ -110,9 +112,7 @@ void load_site(string site_file){				//todo: make sure file is there
 			site_urls.push_back(text);
 		}
 	}
-	for (int i=0; i<site_urls.size(); i++){
-		cout << site_urls[i] << endl;
-	}
+
 	file.close();
 	//site_urls.pop_back();
 }
