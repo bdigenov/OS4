@@ -105,7 +105,7 @@ int main(int argc, char** argv){
 		file_num++;			//Keep track of which round you are on for file output
 
 		while ((time(NULL) - start_time) < period ) {
-			sleep(10);
+			sleep(1);
 		}
 	}
 }
