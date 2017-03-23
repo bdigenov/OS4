@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sstream>
 #include <curl/curl.h>
 #include <deque>
 #include <unistd.h>
@@ -22,6 +23,7 @@ int search_data(string word, string text);
 deque<string> site_urls;
 vector<string> search_terms;
 deque<string> curl_data;
+vector<string> file_lines;
 
 pthread_mutex_t urlmutex;
 pthread_cond_t urlcond;
@@ -85,21 +87,30 @@ int main(int argc, char** argv){
 	cout << "searchfile: " << search_file << endl;
 	cout << "sitefile: " << site_file << endl;
 	
-	int file_num = 0;
+	int file_num = 1;
 	if(load_search(search_file)==1) return EXIT_FAILURE;
 	while (true) {
 		int count = 0;
 		clock_t start_time = clock();
 		
-		if(load_site(site_file)== 1) return EXIT_FAILURE;
+		//Create proper output file and redirect all output to that file 
+		stringstream ss;
+		ss << file_num;
+		string fn = ss.str();
+		fn+=".csv";
+		ofstream outfile(fn.c_str());
+		streambuf *coutbuf = cout.rdbuf();
+		cout.rdbuf(outfile.rdbuf());
 		
-		string site_in;
+		if(load_site(site_file)== 1) return EXIT_FAILURE;
+		curl_url();
+		/*string site_in;
 		int size = site_urls.size();
 		while(site_urls.size() != 0){
 			site_in = site_urls.back();
 			site_urls.pop_back();
 			curl_url(site_in);
-		}
+		}*/
 		string data_in;
 		int num;
 		while(curl_data.size() != 0){
@@ -107,15 +118,13 @@ int main(int argc, char** argv){
 			curl_data.pop_back();
 			for(int i=0; i<search_terms.size(); i++){
 				num = search_data(search_terms[i], data_in);
-				cout << search_terms[i] << endl;
-				//cout << site_urls[count%size] << endl;
-				cout << num << endl;
-				//cout << endl;
-				//cout << "Number of " << search_terms[i] << " at URL " << site_urls[count%site_urls.size()] << ":" << num << endl;
+				cout << time(0) << "," << search_terms[i] << "," << "URL HERE" << "," << num << endl; //THIS LINE PRINTS TO THE FILE 
 			}
 			count++;
 		}
 		file_num++;			//Keep track of which round you are on for file output
+
+		outfile.close();//Keep track of which round you are on for file output
 
 		while ((clock() - start_time) < period ) {
 			//sleep(1);
@@ -189,7 +198,7 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
   return realsize;
 }
 
-void curl_url(string site)
+void curl_url()
 {
   CURL *curl_handle;
   CURLcode res;
