@@ -13,20 +13,27 @@
 #include <cerrno>
 #include <time.h>
 #include <pthread.h>
+#include <tuple>
+#include <iomanip>
 using namespace std;
 
 int load_site(string site_file);
 int load_search(string search_file);
-void curl_url(string site);
-int search_data(string word, string text);
+void * curl_url(void*);
+void * search_data(void*);
 
 deque<string> site_urls;
 vector<string> search_terms;
 deque<string> curl_data;
 vector<string> file_lines;
 
+deque<tuple<string, string, vector<string> > > url_tuple_data;
+
 pthread_mutex_t urlmutex;
 pthread_cond_t urlcond;
+pthread_mutex_t datamutex;
+pthread_cond_t datacond;
+
 
 
 int main(int argc, char** argv){
@@ -66,9 +73,9 @@ int main(int argc, char** argv){
 			if(param.compare("PERIOD_FETCH") == 0){
 				if(atoi(val.c_str()) < 600 && atoi(val.c_str()) > 0) period = atoi(val.c_str())*CLOCKS_PER_SEC;
 			} else if(param.compare("NUM_FETCH") == 0){
-				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > -1) num_fetch = atoi(val.c_str());
+				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > 0) num_fetch = atoi(val.c_str());
 			} else if(param.compare("NUM_PARSE") == 0){
-				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > -1) num_parse = atoi(val.c_str());
+				if(atoi(val.c_str()) < 8 && atoi(val.c_str()) > 0) num_parse = atoi(val.c_str());
 			} else if(param.compare("SEARCH_FILE") == 0){
 				search_file = val;
 			} else if(param.compare("SITE_FILE") == 0){
@@ -84,55 +91,69 @@ int main(int argc, char** argv){
 	}
 	file.close();
 	
-	cout << "searchfile: " << search_file << endl;
-	cout << "sitefile: " << site_file << endl;
-	
 	int file_num = 1;
+	//Create proper output file and redirect all output to that file 
+	stringstream ss;
+	ss << file_num;
+	string fn = ss.str();
+	fn+=".csv";
+	ofstream outfile(fn.c_str());
+	streambuf *coutbuf = cout.rdbuf();
+	cout.rdbuf(outfile.rdbuf());
+	
+	
+	
+	int curlthreadcount = 0;
+	
 	if(load_search(search_file)==1) return EXIT_FAILURE;
+	
+	pthread_t fetchers[num_fetch];
+	pthread_t parsers[num_parse];
+	
+	for(int i=0; i<num_fetch; i++){
+		pthread_create(&fetchers[i],0,curl_url, NULL);
+	}
+	for(int i=0; i<num_parse; i++){
+		pthread_create(&parsers[i],0,search_data, NULL);
+	}
+	
+	
 	while (true) {
 		int count = 0;
 		clock_t start_time = clock();
 		
-		//Create proper output file and redirect all output to that file 
-		stringstream ss;
-		ss << file_num;
-		string fn = ss.str();
-		fn+=".csv";
-		ofstream outfile(fn.c_str());
-		streambuf *coutbuf = cout.rdbuf();
-		cout.rdbuf(outfile.rdbuf());
 		
-		if(load_site(site_file)== 1) return EXIT_FAILURE;
-		curl_url();
-		/*string site_in;
-		int size = site_urls.size();
-		while(site_urls.size() != 0){
-			site_in = site_urls.back();
-			site_urls.pop_back();
-			curl_url(site_in);
-		}*/
-		string data_in;
-		int num;
-		while(curl_data.size() != 0){
-			data_in = curl_data.back();
-			curl_data.pop_back();
-			for(int i=0; i<search_terms.size(); i++){
-				num = search_data(search_terms[i], data_in);
-				cout << time(0) << "," << search_terms[i] << "," << "URL HERE" << "," << num << endl; //THIS LINE PRINTS TO THE FILE 
-			}
-			count++;
-		}
-		file_num++;			//Keep track of which round you are on for file output
-
-		outfile.close();//Keep track of which round you are on for file output
-
+		
+		if(load_site(site_file)== 1) return EXIT_FAILURE; //loads sites
+		
+		
 		while ((clock() - start_time) < period ) {
 			//sleep(1);
 		}
+		int size = site_urls.size();
+		for(int i=0; i<size; i++){
+			pthread_join(fetchers[i], NULL);
+			pthread_create(&fetchers[i],0,curl_url, NULL);
+		}
+		/*
+		for(int i=0; i<size; i++){
+			pthread_create(&fetchers[i],0,curl_url, NULL);
+		}
+		*/
+		for(int i=0; i<num_parse; i++){
+			pthread_join(parsers[i], NULL);
+			pthread_create(&parsers[i],0,search_data, NULL);
+		}
+		/*
+		for(int i=0; i<num_parse; i++){
+			pthread_create(&parsers[i],0,search_data, NULL);
+		}
+		*/
 	}
+	outfile.close();
 }
 
-int load_site(string site_file){				//todo: make sure file is there
+int load_site(string site_file){				
 	string text;
 	ifstream file(site_file.c_str());
 	pthread_mutex_lock(&urlmutex);
@@ -153,7 +174,7 @@ int load_site(string site_file){				//todo: make sure file is there
 	return 0;
 }
 
-int load_search(string search_file){			//todo: make sure file is there
+int load_search(string search_file){			
 	string text;
 	ifstream file(search_file.c_str());
 	if(file.is_open()){
@@ -198,7 +219,7 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
   return realsize;
 }
 
-void curl_url()
+void * curl_url(void * unused)
 {
   CURL *curl_handle;
   CURLcode res;
@@ -212,6 +233,8 @@ void curl_url()
 
   /* init the curl session */
   curl_handle = curl_easy_init();
+  
+  string site;
   
   pthread_mutex_lock(&urlmutex);
   while(site_urls.empty()){
@@ -253,7 +276,14 @@ void curl_url()
 	 
 	 //cout << "count of " << word << ": " << count << endl;
 	 //cout << data << endl;
-	 curl_data.push_front(data);
+	 
+	 //curl_data.push_front(data);
+	 
+	 //POPULATE TUPLE
+	pthread_mutex_lock(&datamutex);
+	url_tuple_data.push_front(make_tuple(site, data, search_terms));
+	pthread_cond_broadcast(&datacond);
+	pthread_mutex_unlock(&datamutex);
 
 	//printf("%lu bytes retrieved\n", (long)chunk.size);
   }
@@ -271,14 +301,32 @@ void curl_url()
 
 /*~~~~~~~~~~~~~~~~~~~~~~CURL FINISHED~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-int search_data(string word, string text){
+void * search_data(void * unused){
+	
+	string url_copy;
+	string data_copy;
+	string word;
+	
+	pthread_mutex_lock(&datamutex);
+	while(url_tuple_data.empty()){
+		pthread_cond_wait(&datacond, &datamutex);
+	}
+	url_copy = get<0>(url_tuple_data.back());
+	data_copy = get<1>(url_tuple_data.back());
+	word = get<2>(url_tuple_data.back()).back();
+	get<2>(url_tuple_data.back()).pop_back();
+	if(get<2>(url_tuple_data.back()).size() == 0){
+		url_tuple_data.pop_back();
+	}
+	
+	
 	bool pass = false;
 	int count = 0;
-	for(int i=0; i<text.size(); i++){
-		if(text[i] == word[0]){
+	for(int i=0; i<data_copy.size(); i++){
+		if(data_copy[i] == word[0]){
 			pass = true;
 			for(int j=0; j<word.size(); j++){
-				if(text[i+j] != word[j]){
+				if(data_copy[i+j] != word[j]){
 					pass = false;
 					break;
 				}
@@ -288,7 +336,20 @@ int search_data(string word, string text){
 			}
 		}
 	}
-	return count;
+	
+	time_t rawtime;
+	struct tm * timeinfo;
+	char buffer[80];
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+	strftime(buffer,sizeof(buffer),"%d-%m-%Y %I:%M:%S",timeinfo);
+	string str(buffer);
+	url_copy.pop_back();
+	str = str + "," + url_copy + "," + word + "," + to_string(count);
+	cout << str << endl;
+	
+	pthread_cond_broadcast(&datacond);
+	pthread_mutex_unlock(&datamutex);
 }
 
 
