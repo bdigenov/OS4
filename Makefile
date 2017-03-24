@@ -1,10 +1,7 @@
 all:	site-tester
 
-site-tester: site-tester.o
-	g++ site-tester.o -lm -lcurl -o site-tester
-
-site-tester.o: site-tester.cpp
-	g++ -c site-tester.cpp
+site-tester: site-tester.cpp
+	g++ site-tester.cpp -std=c++11 -lcurl -o site-tester
 
 clean:
-	rm *.o site-tester
+	rm *.csv site-tester
