@@ -140,31 +140,11 @@ int main(int argc, char** argv){
 			//Keep waiting if there is time left in period
 		}
 
-		//Track threads, as one fetcher returns, make another
-		int size = site_urls.size();
-		for(int i=0; i<size; i++){
-			pthread_join(fetchers[i], NULL);
-			pthread_create(&fetchers[i],0,curl_url, NULL);
-		}
-		/*
-		for(int i=0; i<size; i++){
-			pthread_create(&fetchers[i],0,curl_url, NULL);
-		}
-		*/
-
-		//Track threads, as one parser returns, make another
-		for(int i=0; i<num_parse; i++){
-			pthread_join(parsers[i], NULL);
-			pthread_create(&parsers[i],0,search_data, NULL);
-		}
-		/*
-		for(int i=0; i<num_parse; i++){
-			pthread_create(&parsers[i],0,search_data, NULL);
-		}
-		*/
+		
 		outfile.close();
 		file_num++;
 	}
+	exit(0);
 }
 
 
@@ -241,77 +221,79 @@ void * curl_url(void * unused)
   CURLcode res;
 
   struct MemoryStruct chunk;
-
-  chunk.memory = (char*)malloc(1);  /* will be grown as needed by the realloc above */
-  chunk.size = 0;    /* no data at this point */
-
-  curl_global_init(CURL_GLOBAL_ALL);
-
-  /* init the curl session */
-  curl_handle = curl_easy_init();
   
-  string site;
-  
-  pthread_mutex_lock(&urlmutex);
-  while(site_urls.empty()){
-	  pthread_cond_wait(&urlcond, &urlmutex);
+  while(true){
+
+	  chunk.memory = (char*)malloc(1);  /* will be grown as needed by the realloc above */
+	  chunk.size = 0;    /* no data at this point */
+
+	  curl_global_init(CURL_GLOBAL_ALL);
+
+	  /* init the curl session */
+	  curl_handle = curl_easy_init();
+	  
+	  string site;
+	  
+	  pthread_mutex_lock(&urlmutex);
+	  while(site_urls.empty()){
+		  pthread_cond_wait(&urlcond, &urlmutex);
+	  }
+	  site = site_urls.back();
+	  site_urls.pop_back();
+	  pthread_cond_broadcast(&urlcond);
+	  pthread_mutex_unlock(&urlmutex);
+
+	  /* specify URL to get */
+	  curl_easy_setopt(curl_handle, CURLOPT_URL, site.c_str());
+	  
+
+	  /* send all data to this function  */
+	  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+
+	  /* we pass our 'chunk' struct to the callback function */
+	  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
+
+	  /* some servers don't like requests that are made without a user-agent
+		 field, so we provide one */
+	  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
+	  
+	  
+	  curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
+
+	  /* get it! */
+	  res = curl_easy_perform(curl_handle);
+
+	  /* check for errors */
+	  if(res != CURLE_OK) {
+		fprintf(stderr, "curl_easy_perform() failed: %s\n",
+				curl_easy_strerror(res));
+	  }
+	  else {
+		
+		 string data = chunk.memory;
+		 
+		 //cout << "count of " << word << ": " << count << endl;
+		 //cout << data << endl;
+		 
+		 //curl_data.push_front(data);
+		 
+		 //POPULATE TUPLE
+		pthread_mutex_lock(&datamutex);
+		url_tuple_data.push_front(make_tuple(site, data, search_terms));
+		pthread_cond_broadcast(&datacond);
+		pthread_mutex_unlock(&datamutex);
+
+		//printf("%lu bytes retrieved\n", (long)chunk.size);
+	  }
+
+	  /* cleanup curl stuff */
+	  curl_easy_cleanup(curl_handle);
+
+	  free(chunk.memory);
+
+	  /* we're done with libcurl, so clean it up */
+	  curl_global_cleanup();
   }
-  site = site_urls.back();
-  site_urls.pop_back();
-  pthread_cond_broadcast(&urlcond);
-  pthread_mutex_unlock(&urlmutex);
-
-  /* specify URL to get */
-  curl_easy_setopt(curl_handle, CURLOPT_URL, site.c_str());
-  
-
-  /* send all data to this function  */
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-
-  /* we pass our 'chunk' struct to the callback function */
-  curl_easy_setopt(curl_handle, CURLOPT_WRITEDATA, (void *)&chunk);
-
-  /* some servers don't like requests that are made without a user-agent
-	 field, so we provide one */
-  curl_easy_setopt(curl_handle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-  
-  
-  curl_easy_setopt(curl_handle, CURLOPT_FOLLOWLOCATION, 1L);
-
-  /* get it! */
-  res = curl_easy_perform(curl_handle);
-
-  /* check for errors */
-  if(res != CURLE_OK) {
-	fprintf(stderr, "curl_easy_perform() failed: %s\n",
-			curl_easy_strerror(res));
-  }
-  else {
-	
-	 string data = chunk.memory;
-	 
-	 //cout << "count of " << word << ": " << count << endl;
-	 //cout << data << endl;
-	 
-	 //curl_data.push_front(data);
-	 
-	 //POPULATE TUPLE
-	pthread_mutex_lock(&datamutex);
-	url_tuple_data.push_front(make_tuple(site, data, search_terms));
-	pthread_cond_broadcast(&datacond);
-	pthread_mutex_unlock(&datamutex);
-
-	//printf("%lu bytes retrieved\n", (long)chunk.size);
-  }
-
-  /* cleanup curl stuff */
-  curl_easy_cleanup(curl_handle);
-
-  free(chunk.memory);
-
-  /* we're done with libcurl, so clean it up */
-  curl_global_cleanup();
-
 }
 
 
@@ -323,49 +305,52 @@ void * search_data(void * unused){
 	string data_copy;
 	string word;
 	
-	pthread_mutex_lock(&datamutex);
-	while(url_tuple_data.empty()){
-		pthread_cond_wait(&datacond, &datamutex);
-	}
-	url_copy = get<0>(url_tuple_data.back());
-	data_copy = get<1>(url_tuple_data.back());
-	word = get<2>(url_tuple_data.back()).back();
-	get<2>(url_tuple_data.back()).pop_back();
-	if(get<2>(url_tuple_data.back()).size() == 0){
-		url_tuple_data.pop_back();
-	}
+	while(true){
 	
-	
-	bool pass = false;
-	int count = 0;
-	for(int i=0; i<data_copy.size(); i++){
-		if(data_copy[i] == word[0]){
-			pass = true;
-			for(int j=0; j<word.size(); j++){
-				if(data_copy[i+j] != word[j]){
-					pass = false;
-					break;
+		pthread_mutex_lock(&datamutex);
+		while(url_tuple_data.empty()){
+			pthread_cond_wait(&datacond, &datamutex);
+		}
+		url_copy = get<0>(url_tuple_data.back());
+		data_copy = get<1>(url_tuple_data.back());
+		word = get<2>(url_tuple_data.back()).back();
+		get<2>(url_tuple_data.back()).pop_back();
+		if(get<2>(url_tuple_data.back()).size() == 0){
+			url_tuple_data.pop_back();
+		}
+		
+		
+		bool pass = false;
+		int count = 0;
+		for(int i=0; i<data_copy.size(); i++){
+			if(data_copy[i] == word[0]){
+				pass = true;
+				for(int j=0; j<word.size(); j++){
+					if(data_copy[i+j] != word[j]){
+						pass = false;
+						break;
+					}
+				}
+				if(pass){
+					count++;
 				}
 			}
-			if(pass){
-				count++;
-			}
 		}
+		
+		time_t rawtime;
+		struct tm * timeinfo;
+		char buffer[80];
+		time(&rawtime);
+		timeinfo = localtime(&rawtime);
+		strftime(buffer,sizeof(buffer),"%d-%m-%Y %I:%M:%S",timeinfo);
+		string str(buffer);
+		url_copy.pop_back();
+		str = str + "," + url_copy + "," + word + "," + to_string(count);
+		cout << str << endl;
+		
+		pthread_cond_broadcast(&datacond);
+		pthread_mutex_unlock(&datamutex);
 	}
-	
-	time_t rawtime;
-	struct tm * timeinfo;
-	char buffer[80];
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
-	strftime(buffer,sizeof(buffer),"%d-%m-%Y %I:%M:%S",timeinfo);
-	string str(buffer);
-	url_copy.pop_back();
-	str = str + "," + url_copy + "," + word + "," + to_string(count);
-	cout << str << endl;
-	
-	pthread_cond_broadcast(&datacond);
-	pthread_mutex_unlock(&datamutex);
 }
 
 //Handles signal cleanly by switching the PROGRAM_CONTINUE flag
